@@ -78,22 +78,7 @@ curl -X POST "http://localhost:8000/predict" \
 
 ---
 
-## 🔁 Using Your Own Model
 
-Replace the content in `model.py` with your own training code. Make sure to save the same bundle format:
-```python
-model_bundle = {
-    "pipeline": your_pipeline,       # sklearn pipeline or model
-    "feature_names": [...],          # list of feature names in order
-    "f1_score": f1,
-    "accuracy": acc,
-    "model_name": "YourModelName",
-}
-with open("heart_model.pkl", "wb") as f:
-    pickle.dump(model_bundle, f)
-```
-
----
 
 ## 📊 Input Features (Cleveland UCI)
 
