@@ -1,67 +1,74 @@
 # HeartGuard API
 
-FastAPI backend for the HeartGuard/CardioSense heart disease prediction app.
+FastAPI backend for the HeartGuard AI System, a heart disease prediction application that serves a trained machine learning model through REST API endpoints.
 
-## Local Setup
+## Live API
 
-```bash
-python -m venv .venv
-source .venv/bin/activate
-pip install -r requirements.txt
-uvicorn main:app --reload --host 0.0.0.0 --port 8001
-```
-
-Open:
+Base URL:
 
 ```text
-http://localhost:8001/docs
+https://heartguard-ai-system-backend.onrender.com
 ```
 
-## Render Deployment
-
-Use this repository as a Render Web Service. The included `render.yaml` uses:
-
-```bash
-pip install -r requirements.txt
-uvicorn main:app --host 0.0.0.0 --port $PORT
-```
-
-Environment variables:
+Health check:
 
 ```text
-PYTHON_VERSION=3.12.3
-CORS_ORIGINS=*
+https://heartguard-ai-system-backend.onrender.com/healthz
 ```
 
-After the Vercel frontend URL is known, replace `CORS_ORIGINS=*` with that URL, for example:
+Frontend:
 
 ```text
-CORS_ORIGINS=https://your-vercel-app.vercel.app
+https://heart-guard-ai-system-front.vercel.app
 ```
 
-## Model Files
+## What This Backend Does
 
-The backend expects these files inside `model/`:
+- Loads a trained heart disease prediction model at application startup.
+- Accepts clinical patient inputs from the React frontend.
+- Converts categorical values into the same encoded format used during training.
+- Scales the input data before prediction.
+- Returns prediction result, disease probability, confidence score, risk level, and readable label.
+- Provides supporting demo endpoints for dashboard, doctor view, patients, and reports.
+
+## Tech Stack
+
+| Area | Technology |
+| --- | --- |
+| API Framework | FastAPI |
+| Server | Uvicorn |
+| ML Runtime | scikit-learn |
+| Data Processing | pandas, NumPy |
+| Model Loading | joblib |
+| Deployment | Render |
+
+## Project Structure
 
 ```text
-model/heart_disease_model.pkl
-model/scaler.pkl
-model/columns.pkl
+.
+├── main.py
+├── model.py
+├── schema.py
+├── requirements.txt
+├── runtime.txt
+├── render.yaml
+└── model/
+    ├── heart_disease_model.pkl
+    ├── scaler.pkl
+    └── columns.pkl
 ```
 
-They are included so Render can deploy the backend from this repo by itself.
-
-## API
+## API Routes
 
 | Method | Route | Description |
 | --- | --- | --- |
 | GET | `/` | API status |
-| GET | `/healthz` | Render health check |
-| POST | `/predict` | Heart disease prediction |
+| GET | `/healthz` | Deployment health check |
+| POST | `/predict` | Predict heart disease risk |
 | GET | `/dashboard` | Demo dashboard data |
-| GET | `/patients` | Demo doctor dashboard data |
-| GET | `/patients/{patient_id}` | Single demo patient |
-| GET | `/reports` | Demo reports data |
+| GET | `/patients` | Demo patient list |
+| GET | `/patients/{patient_id}` | Single patient details |
+| GET | `/reports` | Demo report list |
 
 ## Prediction Request
 
@@ -91,4 +98,83 @@ They are included so Render can deploy the backend from this repo by itself.
   "risk": "Low",
   "label": "No heart disease risk detected"
 }
+```
+
+## Local Setup
+
+Clone the repository:
+
+```bash
+git clone https://github.com/dhruv150304/HeartGuard-AI-System-backend.git
+cd HeartGuard-AI-System-backend
+```
+
+Create and activate a virtual environment:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate
+```
+
+Install dependencies:
+
+```bash
+pip install -r requirements.txt
+```
+
+Run the API:
+
+```bash
+uvicorn main:app --reload --host 0.0.0.0 --port 8001
+```
+
+Open API docs:
+
+```text
+http://localhost:8001/docs
+```
+
+## Render Deployment
+
+This repository includes `render.yaml`.
+
+Render settings:
+
+```text
+Runtime: Python
+Build Command: pip install -r requirements.txt
+Start Command: uvicorn main:app --host 0.0.0.0 --port $PORT
+```
+
+Environment variables:
+
+```text
+PYTHON_VERSION=3.12.3
+CORS_ORIGINS=https://heart-guard-ai-system-front.vercel.app
+```
+
+## Model Files
+
+The following files are required in the `model/` directory:
+
+```text
+model/heart_disease_model.pkl
+model/scaler.pkl
+model/columns.pkl
+```
+
+They are included in this backend repository so Render can deploy the API without depending on another repository.
+
+## Important Note
+
+This API provides screening support for educational purposes. It is not a medical diagnosis tool and should not replace professional healthcare advice.
+
+## Author
+
+Dhruv Kansal
+
+GitHub:
+
+```text
+https://github.com/dhruv150304
 ```
