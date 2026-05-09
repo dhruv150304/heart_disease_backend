@@ -1,19 +1,15 @@
 """
-main.py — FastAPI backend for CardioSensecd /Users/dhruvkansal/Desktop/final_projects/files
-uvicorn main:app --reload --host 0.0.0.0 --port 5000
+FastAPI backend for the CardioSense app.
 
-Matches all frontend pages exactly:
-  - POST /predict         → Prediction.jsx
-  - GET  /dashboard       → Dashboard.jsx
-  - GET  /patients        → DoctorDashboard.jsx
-  - GET  /patients/{id}   → DoctorDashboard.jsx (single patient)
-  - GET  /reports         → Reports.jsx
+Run locally:
+    uvicorn main:app --reload --host 0.0.0.0 --port 8001
 
-Run from inside the files/ directory:
-    uvicorn main:app --reload --host 0.0.0.0 --port 5000
+Deploy on Render with:
+    uvicorn main:app --host 0.0.0.0 --port $PORT
 """
 
 import joblib
+import os
 import pandas as pd
 from pathlib import Path
 from fastapi import FastAPI, HTTPException
@@ -23,7 +19,7 @@ from pydantic import BaseModel
 from typing import Literal
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
-BASE          = Path(__file__).parent.parent / "model"
+BASE          = Path(__file__).parent / "model"
 MODEL_PATH    = BASE / "heart_disease_model.pkl"
 SCALER_PATH   = BASE / "scaler.pkl"
 COLUMNS_PATH  = BASE / "columns.pkl"
@@ -31,6 +27,13 @@ COLUMNS_PATH  = BASE / "columns.pkl"
 model            = None
 scaler           = None
 expected_columns = None
+
+
+def get_allowed_origins() -> list[str]:
+    raw = os.getenv("CORS_ORIGINS", "*").strip()
+    if raw == "*":
+        return ["*"]
+    return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
 @asynccontextmanager
@@ -56,7 +59,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=get_allowed_origins(),
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -109,7 +112,12 @@ def compute_risk_label(probability: int) -> str:
 
 @app.get("/", tags=["General"])
 def root():
-    return {"status": "running", "message": "CardioSense API is live 🫀", "docs": "/docs"}
+    return {"status": "running", "message": "CardioSense API is live", "docs": "/docs"}
+
+
+@app.get("/healthz", tags=["General"])
+def healthcheck():
+    return {"status": "ok"}
 
 
 # ── POST /predict ─────────────────────────────────────────────────────────────

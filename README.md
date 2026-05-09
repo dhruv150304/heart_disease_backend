@@ -1,99 +1,94 @@
-# 🫀 Heart Disease Prediction — FastAPI Backend
+# HeartGuard API
 
-ML-powered REST API using **Random Forest** + **F1 Score** evaluation on the UCI Cleveland Heart Disease dataset.
+FastAPI backend for the HeartGuard/CardioSense heart disease prediction app.
 
----
+## Local Setup
 
-## 📁 Project Structure
-
-```
-heart_disease_api/
-├── main.py          # FastAPI app with all routes
-├── model.py         # Model training & saving script
-├── schema.py        # Pydantic request/response schemas
-├── requirements.txt # Python dependencies
-└── heart_model.pkl  # Auto-generated after running model.py
+```bash
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+uvicorn main:app --reload --host 0.0.0.0 --port 8001
 ```
 
----
+Open:
 
-## 🚀 Setup & Run
+```text
+http://localhost:8001/docs
+```
 
-### 1. Install dependencies
+## Render Deployment
+
+Use this repository as a Render Web Service. The included `render.yaml` uses:
+
 ```bash
 pip install -r requirements.txt
+uvicorn main:app --host 0.0.0.0 --port $PORT
 ```
 
-### 2. Train & save the model
-```bash
-python model.py
-```
-This downloads the Cleveland dataset, trains a Random Forest, prints the **F1 Score**, and saves `heart_model.pkl`.
+Environment variables:
 
-### 3. Start the API server
-```bash
-uvicorn main:app --reload --host 0.0.0.0 --port 8000
+```text
+PYTHON_VERSION=3.12.3
+CORS_ORIGINS=*
 ```
 
-### 4. Open Swagger UI
-```
-http://localhost:8000/docs
+After the Vercel frontend URL is known, replace `CORS_ORIGINS=*` with that URL, for example:
+
+```text
+CORS_ORIGINS=https://your-vercel-app.vercel.app
 ```
 
----
+## Model Files
 
-## 📡 API Endpoints
+The backend expects these files inside `model/`:
+
+```text
+model/heart_disease_model.pkl
+model/scaler.pkl
+model/columns.pkl
+```
+
+They are included so Render can deploy the backend from this repo by itself.
+
+## API
 
 | Method | Route | Description |
-|--------|-------|-------------|
-| GET | `/` | Health check |
-| GET | `/model-info` | Model metadata + F1 score |
-| POST | `/predict` | Single patient prediction |
-| POST | `/predict-batch` | Batch prediction (max 100) |
+| --- | --- | --- |
+| GET | `/` | API status |
+| GET | `/healthz` | Render health check |
+| POST | `/predict` | Heart disease prediction |
+| GET | `/dashboard` | Demo dashboard data |
+| GET | `/patients` | Demo doctor dashboard data |
+| GET | `/patients/{patient_id}` | Single demo patient |
+| GET | `/reports` | Demo reports data |
 
----
+## Prediction Request
 
-## 🧪 Sample Request
-
-```bash
-curl -X POST "http://localhost:8000/predict" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "age": 52, "sex": 1, "cp": 0, "trestbps": 125,
-    "chol": 212, "fbs": 0, "restecg": 1, "thalach": 168,
-    "exang": 0, "oldpeak": 1.0, "slope": 2, "ca": 2, "thal": 3
-  }'
-```
-
-### Sample Response
 ```json
 {
-  "prediction": 1,
-  "label": "Heart Disease Detected 🚨",
-  "probability_no_disease": 0.12,
-  "probability_disease": 0.88,
-  "f1_score_on_test": 0.8421
+  "Age": 45,
+  "Sex": "M",
+  "ChestPainType": "ATA",
+  "RestingBP": 120,
+  "Cholesterol": 200,
+  "FastingBS": 0,
+  "RestingECG": "Normal",
+  "MaxHR": 150,
+  "ExerciseAngina": "N",
+  "Oldpeak": 1.0,
+  "ST_Slope": "Up"
 }
 ```
 
----
+## Prediction Response
 
-
-
-## 📊 Input Features (Cleveland UCI)
-
-| Feature | Description |
-|---------|-------------|
-| age | Age in years |
-| sex | 0 = Female, 1 = Male |
-| cp | Chest pain type (0–3) |
-| trestbps | Resting blood pressure (mm Hg) |
-| chol | Serum cholesterol (mg/dl) |
-| fbs | Fasting blood sugar > 120 mg/dl |
-| restecg | Resting ECG results (0–2) |
-| thalach | Max heart rate achieved |
-| exang | Exercise-induced angina |
-| oldpeak | ST depression by exercise |
-| slope | Slope of peak exercise ST segment |
-| ca | Major vessels colored by fluoroscopy (0–3) |
-| thal | Thalassemia type (0–3) |
+```json
+{
+  "prediction": 0,
+  "probability": 22,
+  "confidence": 78,
+  "risk": "Low",
+  "label": "No heart disease risk detected"
+}
+```
