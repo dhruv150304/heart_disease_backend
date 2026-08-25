@@ -12,11 +12,12 @@ import joblib
 import os
 import pandas as pd
 from pathlib import Path
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from pydantic import BaseModel
 from typing import Literal
+from auth import current_user, get_supabase, require_clinician
 
 # ── Paths ─────────────────────────────────────────────────────────────────────
 BASE          = Path(__file__).parent / "model"
@@ -30,9 +31,7 @@ expected_columns = None
 
 
 def get_allowed_origins() -> list[str]:
-    raw = os.getenv("CORS_ORIGINS", "*").strip()
-    if raw == "*":
-        return ["*"]
+    raw = os.getenv("CORS_ORIGINS", "http://localhost:5173").strip()
     return [origin.strip() for origin in raw.split(",") if origin.strip()]
 
 
@@ -124,7 +123,7 @@ def healthcheck():
 # Called by Prediction.jsx
 # Returns: { prediction, probability, risk, confidence, label }
 @app.post("/predict", tags=["Prediction"])
-def predict(data: HeartInput):
+def predict(data: HeartInput, user: dict = Depends(current_user)):
     if model is None:
         raise HTTPException(status_code=503, detail="Model not loaded.")
 
@@ -167,6 +166,19 @@ def predict(data: HeartInput):
     confidence = max(probability, 100 - probability)
     risk       = compute_risk_label(probability)
 
+    try:
+        get_supabase().table("predictions").insert({
+            "patient_id": user["id"],
+            "input": data.model_dump(),
+            "prediction": prediction,
+            "probability": probability,
+            "confidence": confidence,
+            "risk": risk,
+            "model_version": "heart-disease-model-v1",
+        }).execute()
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="Prediction could not be saved securely.") from exc
+
     return {
         "prediction":  prediction,
         "probability": probability,
@@ -179,53 +191,36 @@ def predict(data: HeartInput):
 # ── GET /dashboard ────────────────────────────────────────────────────────────
 # Called by Dashboard.jsx — returns vitals, prediction history, risk trend
 @app.get("/dashboard", tags=["Dashboard"])
-def get_dashboard():
-    return {
-        "vitals": [
-            {"label": "Heart Rate",    "value": "72",     "unit": "bpm"},
-            {"label": "Blood Pressure","value": "118/76", "unit": "mmHg"},
-            {"label": "Cholesterol",   "value": "168",    "unit": "mg/dL"},
-            {"label": "Blood Sugar",   "value": "92",     "unit": "mg/dL"},
-        ],
-        "currentRisk":  "Low",
-        "riskScore":    18,
-        "riskTrend":    [67, 52, 39, 32, 24, 18],
-        "predictions": [
-            {"date": "26 Apr", "risk": "Low",    "score": 18, "bp": "118/76", "cholesterol": 168},
-            {"date": "12 Apr", "risk": "Low",    "score": 24, "bp": "122/78", "cholesterol": 174},
-            {"date": "29 Mar", "risk": "Medium", "score": 39, "bp": "130/84", "cholesterol": 196},
-            {"date": "15 Mar", "risk": "High",   "score": 67, "bp": "146/92", "cholesterol": 224},
-        ],
-    }
+def get_dashboard(user: dict = Depends(current_user)):
+    response = get_supabase().table("predictions").select("id, probability, confidence, risk, prediction, created_at, input").eq("patient_id", user["id"]).order("created_at", desc=True).limit(20).execute()
+    predictions = response.data or []
+    latest = predictions[0] if predictions else None
+    return {"currentRisk": latest["risk"] if latest else None, "riskScore": latest["probability"] if latest else None, "predictions": predictions}
 
 
 # ── GET /patients ─────────────────────────────────────────────────────────────
 # Called by DoctorDashboard.jsx — returns full patient list
 @app.get("/patients", tags=["Doctor"])
-def get_patients(risk: str = None, search: str = None):
-    patients = [
-        {"id": "PT-1024", "name": "Aarav Mehta",     "age": 54, "sex": "Male",   "risk": "High",   "score": 78, "lastReport": "26 Apr 2026", "phone": "+91 98765 12034", "bp": "148/94", "cholesterol": 238, "heartRate": 86, "diagnosis": "Heart disease risk detected",       "notes": "Exercise angina reported. ST slope flat with elevated cholesterol.", "suggestions": ["Schedule ECG review", "Adjust cholesterol management", "Follow up within 7 days"]},
-        {"id": "PT-1025", "name": "Isha Kapoor",      "age": 46, "sex": "Female", "risk": "Low",    "score": 18, "lastReport": "25 Apr 2026", "phone": "+91 98111 34490", "bp": "118/76", "cholesterol": 168, "heartRate": 72, "diagnosis": "No heart disease risk detected",    "notes": "Vitals are stable. Continue preventive monitoring.",               "suggestions": ["Routine check-up", "Maintain activity", "Repeat screening in 6 months"]},
-        {"id": "PT-1026", "name": "Kabir Singh",      "age": 61, "sex": "Male",   "risk": "Medium", "score": 52, "lastReport": "23 Apr 2026", "phone": "+91 99002 45678", "bp": "136/86", "cholesterol": 211, "heartRate": 80, "diagnosis": "Moderate risk indicators found",     "notes": "Resting BP and cholesterol are above ideal range.",                 "suggestions": ["Lifestyle counselling", "Repeat lipid profile", "Review in 30 days"]},
-        {"id": "PT-1027", "name": "Meera Rao",        "age": 39, "sex": "Female", "risk": "Low",    "score": 24, "lastReport": "21 Apr 2026", "phone": "+91 98888 76123", "bp": "122/78", "cholesterol": 174, "heartRate": 76, "diagnosis": "No heart disease risk detected",    "notes": "Slightly elevated stress markers but overall safe range.",          "suggestions": ["Continue monitoring", "Improve sleep routine", "Repeat screening if symptoms appear"]},
-        {"id": "PT-1028", "name": "Rohan Malhotra",   "age": 58, "sex": "Male",   "risk": "High",   "score": 84, "lastReport": "20 Apr 2026", "phone": "+91 97654 22310", "bp": "152/96", "cholesterol": 252, "heartRate": 91, "diagnosis": "Heart disease risk detected",       "notes": "High model score with asymptomatic chest pain type and exercise angina.", "suggestions": ["Urgent cardiology appointment", "Monitor BP daily", "Avoid strenuous activity"]},
-    ]
-
-    # Optional server-side filtering
-    if risk and risk != "All":
-        patients = [p for p in patients if p["risk"] == risk]
-    if search:
-        s = search.lower()
-        patients = [p for p in patients if s in p["name"].lower() or s in p["id"].lower() or s in p["phone"]]
-
+def get_patients(risk: str = None, search: str = None, clinician: dict = Depends(require_clinician)):
+    db = get_supabase()
+    assignments = db.table("clinician_patients").select("patient_id").eq("clinician_id", clinician["id"]).execute().data or []
+    patients = []
+    for assignment in assignments:
+        patient_id = assignment["patient_id"]
+        profile = db.table("profiles").select("id, full_name").eq("id", patient_id).single().execute().data
+        latest = db.table("predictions").select("id, risk, probability, confidence, prediction, created_at").eq("patient_id", patient_id).order("created_at", desc=True).limit(1).execute().data
+        if profile and latest:
+            record = {"id": profile["id"], "name": profile["full_name"], **latest[0]}
+            if (not risk or risk == "All" or record["risk"] == risk) and (not search or search.lower() in record["name"].lower()):
+                patients.append(record)
     return {"total": len(patients), "patients": patients}
 
 
 # ── GET /patients/{patient_id} ────────────────────────────────────────────────
 # Called by DoctorDashboard when viewing a single patient
 @app.get("/patients/{patient_id}", tags=["Doctor"])
-def get_patient(patient_id: str):
-    all_patients_resp = get_patients()
+def get_patient(patient_id: str, clinician: dict = Depends(require_clinician)):
+    all_patients_resp = get_patients(clinician=clinician)
     match = next((p for p in all_patients_resp["patients"] if p["id"] == patient_id), None)
     if not match:
         raise HTTPException(status_code=404, detail=f"Patient {patient_id} not found.")
@@ -235,12 +230,6 @@ def get_patient(patient_id: str):
 # ── GET /reports ──────────────────────────────────────────────────────────────
 # Called by Reports.jsx
 @app.get("/reports", tags=["Reports"])
-def get_reports():
-    return {
-        "reports": [
-            {"id": 1, "date": "26 Apr 2026", "title": "Monthly Health Summary",    "status": "Complete"},
-            {"id": 2, "date": "12 Apr 2026", "title": "Risk Assessment Report",    "status": "Complete"},
-            {"id": 3, "date": "29 Mar 2026", "title": "Quarterly Health Report",   "status": "Complete"},
-            {"id": 4, "date": "15 Mar 2026", "title": "Annual Health Overview",    "status": "Pending"},
-        ]
-    }
+def get_reports(user: dict = Depends(current_user)):
+    reports = get_supabase().table("predictions").select("id, risk, probability, confidence, created_at").eq("patient_id", user["id"]).order("created_at", desc=True).execute().data or []
+    return {"reports": reports}
